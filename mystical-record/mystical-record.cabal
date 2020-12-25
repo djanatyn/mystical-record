@@ -18,4 +18,4 @@ executable mystical-record
                   servant -any,
                   servant-client -any,
                   servant-client-core -any,
-                  text -any
+                  text -any, hxt -any, hxt-css -any

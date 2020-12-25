@@ -90,6 +90,6 @@ archiveClient = genericClient @ArchiveAPI
 main :: IO ()
 main = do
   archiveBroadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
-  withSQLite "broadcasts.sqlite" $ do
+  withSQLite "broadcasts.db" $ do
     createTable broadcasts
     insert_ broadcasts archiveBroadcasts

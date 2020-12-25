@@ -9,6 +9,7 @@
 
 module Main where
 
+import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import Data.Coerce
@@ -22,8 +23,6 @@ import Servant.Client.Core
 import Servant.Client.Generic
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
-
-newtype DJ = DJ Text deriving (Show, ToHttpApiData)
 
 data HTML
 
@@ -51,8 +50,17 @@ runArchive action = do
 archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
+newtype DJ = DJ Text deriving (Show, ToHttpApiData)
+
+knownDJs :: [DJ]
+knownDJs =
+  [ DJ "who",
+    DJ "umbra",
+    DJ "mon"
+  ]
+
 main :: IO ()
-main = fetchDJ (DJ "umbra") >>= print
+main = traverse fetchDJ knownDJs >>= print
 
 fetchDJ :: DJ -> IO (Maybe [Broadcast])
 fetchDJ dj = do

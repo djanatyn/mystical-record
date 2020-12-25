@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -14,6 +15,8 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import Data.Coerce
 import Data.Text
+import Database.Selda
+import Database.Selda.SQLite
 import Network.HTTP.Client
 import Network.HTTP.Media hiding (Accept)
 import Servant.API
@@ -39,7 +42,9 @@ data ArchiveAPI r = ArchiveAPI
   }
   deriving (Generic)
 
-newtype Broadcast = Broadcast String deriving (Show)
+newtype Broadcast = Broadcast Text deriving (Show, Generic)
+
+instance SqlRow Broadcast
 
 runArchive :: ClientM a -> IO (Either ClientError a)
 runArchive action = do
@@ -70,8 +75,10 @@ fetchDJ dj = do
     Right html -> Just <$> parseBroadcasts (unpack html)
 
 parseBroadcasts :: String -> IO [Broadcast]
-parseBroadcasts html =
-  coerce . runX $
-    readString [withParseHTML yes] html
-      >>> css ("a" :: String)
-      >>> getAttrValue "href"
+parseBroadcasts html = do
+  url <-
+    runX $
+      readString [withParseHTML yes] html
+        >>> css ("a" :: String)
+        >>> getAttrValue "href"
+  return . coerce $ pack <$> url

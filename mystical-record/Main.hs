@@ -40,7 +40,7 @@ data ArchiveAPI r = ArchiveAPI
   }
   deriving (Generic)
 
-newtype Broadcast = Broadcast [String] deriving (Show)
+newtype Broadcast = Broadcast String deriving (Show)
 
 runArchive :: ClientM a -> IO (Either ClientError a)
 runArchive action = do
@@ -52,16 +52,17 @@ archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
 main :: IO ()
-main = do
-  archives <- runArchive $ listDJ archiveClient (Just $ DJ "umbra")
-  case archives of
-    Left error -> print error
-    Right archives -> do
-      broadcast <- parseBroadcast $ unpack archives
-      print broadcast
+main = fetchDJ (DJ "umbra") >>= print
 
-parseBroadcast :: String -> IO Broadcast
-parseBroadcast html =
+fetchDJ :: DJ -> IO (Maybe [Broadcast])
+fetchDJ dj = do
+  archives <- runArchive $ listDJ archiveClient (Just dj)
+  case archives of
+    Left error -> return Nothing
+    Right html -> Just <$> parseBroadcasts (unpack html)
+
+parseBroadcasts :: String -> IO [Broadcast]
+parseBroadcasts html =
   coerce . runX $
     readString [withParseHTML yes] html
       >>> css ("a" :: String)

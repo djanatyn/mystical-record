@@ -16,6 +16,7 @@ haskellPackages.mkDerivation rec {
     megaparsec
     parser-combinators
     selda
+    selda-sqlite
     servant
     servant-client
     servant-client-core

@@ -1,4 +1,4 @@
-{ haskellPackages }:
+{ zlib, haskellPackages }:
 
 haskellPackages.mkDerivation rec {
   pname = "mystical-record";
@@ -19,6 +19,11 @@ haskellPackages.mkDerivation rec {
     servant
     servant-client
     servant-client-core
+
+    zlib
+
+    hxt
+    hxt-css
   ];
 
   src = builtins.path {

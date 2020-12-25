@@ -1,10 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -14,6 +17,7 @@ import Control.Monad
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
 import Data.Coerce
+import Data.Maybe
 import Data.Text
 import Database.Selda
 import Database.Selda.SQLite
@@ -42,9 +46,12 @@ data ArchiveAPI r = ArchiveAPI
   }
   deriving (Generic)
 
-newtype Broadcast = Broadcast Text deriving (Show, Generic)
+data Broadcast = Broadcast {url :: Text, dj :: Text} deriving (Show, Generic)
 
 instance SqlRow Broadcast
+
+broadcasts :: Table Broadcast
+broadcasts = table "broadcasts" [#url :- primary]
 
 runArchive :: ClientM a -> IO (Either ClientError a)
 runArchive action = do
@@ -55,7 +62,7 @@ runArchive action = do
 archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
-newtype DJ = DJ Text deriving (Show, ToHttpApiData)
+newtype DJ = DJ Text deriving (Show, ToHttpApiData, Generic)
 
 knownDJs :: [DJ]
 knownDJs =
@@ -65,20 +72,22 @@ knownDJs =
   ]
 
 main :: IO ()
-main = traverse fetchDJ knownDJs >>= print
+main = do
+  broadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
+  print broadcasts
 
 fetchDJ :: DJ -> IO (Maybe [Broadcast])
 fetchDJ dj = do
   archives <- runArchive $ listDJ archiveClient (Just dj)
   case archives of
     Left error -> return Nothing
-    Right html -> Just <$> parseBroadcasts (unpack html)
+    Right html -> Just <$> parseBroadcasts dj (unpack html)
 
-parseBroadcasts :: String -> IO [Broadcast]
-parseBroadcasts html = do
-  url <-
+parseBroadcasts :: DJ -> String -> IO [Broadcast]
+parseBroadcasts dj html = do
+  urls <-
     runX $
       readString [withParseHTML yes] html
         >>> css ("a" :: String)
         >>> getAttrValue "href"
-  return . coerce $ pack <$> url
+  return $ [Broadcast {url = pack url, dj = coerce dj} | url <- urls]

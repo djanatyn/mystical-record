@@ -1,4 +1,6 @@
 ---
 image: nixos/unstable
 tasks:
-  - main: nix run -f mystical-record mystical-record -c mystical-record
+  - main: |
+      export NIV_OVERRIDE_nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixos-unstable
+      nix run -f mystical-record mystical-record -c mystical-record

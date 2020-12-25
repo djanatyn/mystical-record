@@ -46,9 +46,34 @@ data ArchiveAPI r = ArchiveAPI
   }
   deriving (Generic)
 
+newtype DJ = DJ Text deriving (Show, ToHttpApiData, Generic)
+
 data Broadcast = Broadcast {url :: Text, dj :: Text} deriving (Show, Generic)
 
 instance SqlRow Broadcast
+
+knownDJs :: [DJ]
+knownDJs =
+  [ DJ "who",
+    DJ "umbra",
+    DJ "mon"
+  ]
+
+parseBroadcasts :: DJ -> String -> IO [Broadcast]
+parseBroadcasts dj html = do
+  urls <-
+    runX $
+      readString [withParseHTML yes] html
+        >>> css ("a" :: String)
+        >>> getAttrValue "href"
+  return [Broadcast {url = pack url, dj = coerce dj} | url <- urls]
+
+fetchDJ :: DJ -> IO (Maybe [Broadcast])
+fetchDJ dj = do
+  archives <- runArchive $ listDJ archiveClient (Just dj)
+  case archives of
+    Left error -> return Nothing
+    Right html -> Just <$> parseBroadcasts dj (unpack html)
 
 broadcasts :: Table Broadcast
 broadcasts = table "broadcasts" [#url :- primary]
@@ -62,32 +87,9 @@ runArchive action = do
 archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
-newtype DJ = DJ Text deriving (Show, ToHttpApiData, Generic)
-
-knownDJs :: [DJ]
-knownDJs =
-  [ DJ "who",
-    DJ "umbra",
-    DJ "mon"
-  ]
-
 main :: IO ()
 main = do
-  broadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
-  print broadcasts
-
-fetchDJ :: DJ -> IO (Maybe [Broadcast])
-fetchDJ dj = do
-  archives <- runArchive $ listDJ archiveClient (Just dj)
-  case archives of
-    Left error -> return Nothing
-    Right html -> Just <$> parseBroadcasts dj (unpack html)
-
-parseBroadcasts :: DJ -> String -> IO [Broadcast]
-parseBroadcasts dj html = do
-  urls <-
-    runX $
-      readString [withParseHTML yes] html
-        >>> css ("a" :: String)
-        >>> getAttrValue "href"
-  return $ [Broadcast {url = pack url, dj = coerce dj} | url <- urls]
+  archiveBroadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
+  withSQLite "broadcasts.sqlite" $ do
+    createTable broadcasts
+    insert_ broadcasts archiveBroadcasts

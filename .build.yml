@@ -1,0 +1,4 @@
+---
+image: nixos/unstable
+tasks:
+  - main: nix run -f mystical-record mystical-record -c mystical-record

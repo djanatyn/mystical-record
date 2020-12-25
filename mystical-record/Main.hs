@@ -11,6 +11,7 @@ module Main where
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSC
+import Data.Coerce
 import Data.Text
 import Network.HTTP.Client
 import Network.HTTP.Media hiding (Accept)
@@ -39,6 +40,8 @@ data ArchiveAPI r = ArchiveAPI
   }
   deriving (Generic)
 
+newtype Broadcast = Broadcast [String] deriving (Show)
+
 runArchive :: ClientM a -> IO (Either ClientError a)
 runArchive action = do
   manager <- newManager defaultManagerSettings
@@ -57,9 +60,9 @@ main = do
       broadcast <- parseBroadcast $ unpack archives
       print broadcast
 
-parseBroadcast :: String -> IO [String]
+parseBroadcast :: String -> IO Broadcast
 parseBroadcast html =
-  runX $
+  coerce . runX $
     readString [withParseHTML yes] html
       >>> css ("a" :: String)
       >>> getAttrValue "href"

@@ -87,9 +87,12 @@ runArchive action = do
 archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
+initDatabase :: FilePath -> [Broadcast] -> IO ()
+initDatabase path input = withSQLite path $ do
+  createTable broadcasts
+  insert_ broadcasts input
+
 main :: IO ()
 main = do
   archiveBroadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
-  withSQLite "broadcasts.db" $ do
-    createTable broadcasts
-    insert_ broadcasts archiveBroadcasts
+  initDatabase "broadcasts.db" archiveBroadcasts

@@ -85,6 +85,16 @@ instance DB.SqlRow BroadcastLink
 
 type ApiHTML = String
 
+-- | Download a BroadcastLink
+downloadBroadcast :: BroadcastLink -> FilePath -> IO ()
+downloadBroadcast (BroadcastLink {url, dj}) path = do
+  manager <- newManager defaultManagerSettings
+  request <- parseRequest $ "http://radio.fobby.net/archives" ++ toString url
+  response <-
+    withResponse request manager $
+      Network.HTTP.Client.responseBody
+  writeFileBS path response
+
 -- | Parse out [BroadcastLink] from ArchiveAPI response for a given DJ
 parseBroadcasts :: DJ -> ApiHTML -> IO [BroadcastLink]
 parseBroadcasts dj html = do

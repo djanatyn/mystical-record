@@ -81,12 +81,12 @@ data BroadcastLink where
     BroadcastLink
   deriving (Show, Generic)
 
-instance DB.SqlRow Broadcast
+instance DB.SqlRow BroadcastLink
 
 type ApiHTML = String
 
 -- | Parse out [BroadcastLink] from ArchiveAPI response for a given DJ
-parseBroadcasts :: DJ -> ApiHTML -> IO [Broadcast]
+parseBroadcasts :: DJ -> ApiHTML -> IO [BroadcastLink]
 parseBroadcasts dj html = do
   urls <-
     runX $
@@ -112,7 +112,7 @@ broadcasts :: DB.Table BroadcastLink
 broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 
 -- | Create database + tables
-initDatabase :: FilePath -> [Broadcast] -> IO ()
+initDatabase :: FilePath -> [BroadcastLink] -> IO ()
 initDatabase path input = DBS.withSQLite path $ do
   DB.createTable broadcasts
   DB.insert_ broadcasts input

@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -10,19 +11,19 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Main where
 
 import Control.Monad
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BSC
 import Data.Coerce
 import Data.Maybe
-import Data.Text
-import Database.Selda
-import Database.Selda.SQLite
+import Database.Selda (Attr (..))
+import qualified Database.Selda as DB
+import qualified Database.Selda.SQLite as DBS
 import Network.HTTP.Client
 import Network.HTTP.Media hiding (Accept)
+import Relude
 import Servant.API
 import Servant.API.Generic
 import Servant.Client
@@ -34,23 +35,31 @@ import Text.XML.HXT.Core
 data HTML
 
 instance MimeUnrender HTML Text where
-  mimeUnrender _ = Right . pack . BSC.unpack
+  mimeUnrender _ = Right . decodeUtf8
 
 instance Accept HTML where
   contentType _ = "text" // "html" /: ("charset", "utf-8")
 
-data ArchiveAPI r = ArchiveAPI
-  { listDJ ::
-      r :- "archives.php" :> QueryParam "dj" DJ
-        :> Get '[HTML] Text
-  }
+data ArchiveAPI r where
+  ArchiveAPI ::
+    { listDJ ::
+        r :- "archives.php" :> QueryParam "dj" DJ
+          :> Get '[HTML] Text
+    } ->
+    ArchiveAPI r
   deriving (Generic)
 
 newtype DJ = DJ Text deriving (Show, ToHttpApiData, Generic)
 
-data Broadcast = Broadcast {url :: Text, dj :: Text} deriving (Show, Generic)
+data Broadcast where
+  Broadcast ::
+    { url :: Text,
+      dj :: Text
+    } ->
+    Broadcast
+  deriving (Show, Generic)
 
-instance SqlRow Broadcast
+instance DB.SqlRow Broadcast
 
 knownDJs :: [DJ]
 knownDJs =
@@ -66,17 +75,17 @@ parseBroadcasts dj html = do
       readString [withParseHTML yes] html
         >>> css ("a" :: String)
         >>> getAttrValue "href"
-  return [Broadcast {url = pack url, dj = coerce dj} | url <- urls]
+  return $ map (\url -> Broadcast {url = toText url, dj = coerce dj}) urls
 
 fetchDJ :: DJ -> IO (Maybe [Broadcast])
 fetchDJ dj = do
   archives <- runArchive $ listDJ archiveClient (Just dj)
   case archives of
     Left error -> return Nothing
-    Right html -> Just <$> parseBroadcasts dj (unpack html)
+    Right html -> Just <$> parseBroadcasts dj (toString html)
 
-broadcasts :: Table Broadcast
-broadcasts = table "broadcasts" [#url :- primary]
+broadcasts :: DB.Table Broadcast
+broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 
 runArchive :: ClientM a -> IO (Either ClientError a)
 runArchive action = do
@@ -88,9 +97,9 @@ archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
 initDatabase :: FilePath -> [Broadcast] -> IO ()
-initDatabase path input = withSQLite path $ do
-  createTable broadcasts
-  insert_ broadcasts input
+initDatabase path input = DBS.withSQLite path $ do
+  DB.createTable broadcasts
+  DB.insert_ broadcasts input
 
 main :: IO ()
 main = do

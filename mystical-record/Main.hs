@@ -32,14 +32,9 @@ import Servant.Client.Generic
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
 
-data HTML
-
-instance MimeUnrender HTML Text where
-  mimeUnrender _ = Right . decodeUtf8
-
-instance Accept HTML where
-  contentType _ = "text" // "html" /: ("charset", "utf-8")
-
+-- | Radio Starmen Archives are enumerated with a PHP script, "archives.php".
+-- | The script takes a query parameter, `dj`, and returns HTML with a listing
+-- | of broadcasts.
 data ArchiveAPI r where
   ArchiveAPI ::
     { listDJ ::
@@ -49,18 +44,27 @@ data ArchiveAPI r where
     ArchiveAPI r
   deriving (Generic)
 
+-- | There are several different DJs in the archive, all indexed by strings
 newtype DJ = DJ Text deriving (Show, ToHttpApiData, Generic)
 
-data Broadcast where
-  Broadcast ::
-    { url :: Text,
-      dj :: Text
-    } ->
-    Broadcast
-  deriving (Show, Generic)
+-- | The HTML returned by archives.php has a Content-Type which isn't
+-- | known by servant: < Content-Type: text/html; charset=utf-8
+data HTML
 
-instance DB.SqlRow Broadcast
+instance MimeUnrender HTML Text where
+  mimeUnrender _ = Right . decodeUtf8
 
+instance Accept HTML where
+  contentType _ = "text" // "html" /: ("charset", "utf-8")
+
+-- | Run HTTP requests against archiveAPI
+runArchive :: ClientM a -> IO (Either ClientError a)
+runArchive action = do
+  manager <- newManager defaultManagerSettings
+  let env = mkClientEnv manager $ BaseUrl Http "radio.fobby.net" 80 "archives"
+   in runClientM action env
+
+-- | We know about several DJs that exist within the archive
 knownDJs :: [DJ]
 knownDJs =
   [ DJ "who",
@@ -68,39 +72,52 @@ knownDJs =
     DJ "mon"
   ]
 
-parseBroadcasts :: DJ -> String -> IO [Broadcast]
+-- | The ArchiveAPI provides links to individual broadcasts
+data BroadcastLink where
+  BroadcastLink ::
+    { url :: Text,
+      dj :: Text
+    } ->
+    BroadcastLink
+  deriving (Show, Generic)
+
+instance DB.SqlRow Broadcast
+
+type ApiHTML = String
+
+-- | Parse out [BroadcastLink] from ArchiveAPI response for a given DJ
+parseBroadcasts :: DJ -> ApiHTML -> IO [Broadcast]
 parseBroadcasts dj html = do
   urls <-
     runX $
       readString [withParseHTML yes] html
         >>> css ("a" :: String)
         >>> getAttrValue "href"
-  return $ map (\url -> Broadcast {url = toText url, dj = coerce dj}) urls
+  return $ map (\url -> BroadcastLink {url = toText url, dj = coerce dj}) urls
 
-fetchDJ :: DJ -> IO (Maybe [Broadcast])
+-- | HTTP Client for ArchiveAPI
+archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
+archiveClient = genericClient @ArchiveAPI
+
+-- | Use archiveClient to fetch broadcast listings for a given DJ
+fetchDJ :: DJ -> IO (Maybe [BroadcastLink])
 fetchDJ dj = do
   archives <- runArchive $ listDJ archiveClient (Just dj)
   case archives of
     Left error -> return Nothing
     Right html -> Just <$> parseBroadcasts dj (toString html)
 
-broadcasts :: DB.Table Broadcast
+-- | SQLite table for BroadcastLink
+broadcasts :: DB.Table BroadcastLink
 broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 
-runArchive :: ClientM a -> IO (Either ClientError a)
-runArchive action = do
-  manager <- newManager defaultManagerSettings
-  let env = mkClientEnv manager $ BaseUrl Http "radio.fobby.net" 80 "archives"
-   in runClientM action env
-
-archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
-archiveClient = genericClient @ArchiveAPI
-
+-- | Create database + tables
 initDatabase :: FilePath -> [Broadcast] -> IO ()
 initDatabase path input = DBS.withSQLite path $ do
   DB.createTable broadcasts
   DB.insert_ broadcasts input
 
+-- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()
 main = do
   archiveBroadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs

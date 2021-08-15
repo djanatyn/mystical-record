@@ -26,4 +26,7 @@ executable mystical-record
       hxt-css,
       -- persistence
       selda,
-      selda-sqlite
+      selda-sqlite,
+      -- logging
+      time,
+      co-log-core

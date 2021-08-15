@@ -15,9 +15,12 @@
 
 module Main where
 
+import Colog.Core ((&>))
+import Colog.Core.IO (logStringStdout)
 import Control.Monad
 import Data.Coerce
 import Data.Maybe
+import Data.Time.LocalTime (getZonedTime)
 import Database.Selda (Attr (..))
 import qualified Database.Selda as DB
 import qualified Database.Selda.SQLite as DBS
@@ -31,6 +34,12 @@ import Servant.Client.Core
 import Servant.Client.Generic
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
+
+log :: String -> IO ()
+log msg = do
+  time <- getZonedTime
+  let record = concat ["[ ", show @String time, " ] ", msg]
+   in record &> logStringStdout
 
 -- | Radio Starmen Archives are enumerated with a PHP script, "archives.php".
 -- | The script takes a query parameter, `dj`, and returns HTML with a listing
@@ -87,7 +96,8 @@ type ApiHTML = String
 
 -- | Download a BroadcastLink
 downloadBroadcast :: BroadcastLink -> FilePath -> IO ()
-downloadBroadcast (BroadcastLink {url, dj}) path = do
+downloadBroadcast (link@BroadcastLink {url, dj}) path = do
+  log $ "downloading " ++ show link
   manager <- newManager defaultManagerSettings
   request <- parseRequest $ "http://radio.fobby.net/archives" ++ toString url
   response <-

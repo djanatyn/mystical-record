@@ -116,7 +116,7 @@ parseBroadcasts :: DJ -> ApiHTML -> IO [BroadcastLink]
 parseBroadcasts dj html = do
   urls <-
     runX $
-      readString [withParseHTML yes] html
+      readString [withParseHTML yes, withWarnings no] html
         >>> css ("a" :: String)
         >>> getAttrValue "href"
   return $ map (\url -> BroadcastLink {url = toText url, dj = coerce dj}) urls

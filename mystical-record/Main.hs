@@ -32,7 +32,7 @@ import Servant.API.Generic
 import Servant.Client
 import Servant.Client.Core
 import Servant.Client.Generic
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath (takeDirectory)
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
@@ -145,12 +145,10 @@ insertBroadcastLinks log path input = do
   result <- try @SeldaError $
     DBS.withSQLite path $ do
       DB.tryCreateTable broadcasts
-      DB.insert_ broadcasts input
+      DB.tryInsert broadcasts input
   case result of
     Left error -> do
       log $ concat ["failed to add broadcast links: ", show error]
-      log "fatal error, exiting"
-      exitFailure
     otherwise -> return ()
 
 downloadLinks :: Logger -> [BroadcastLink] -> IO ()
@@ -159,7 +157,10 @@ downloadLinks log links = forM_ links $ \(link@BroadcastLink {url}) -> do
   let path = "downloads/" ++ toString url
    in do
         createDirectoryIfMissing True $ takeDirectory path
-        downloadBroadcast log link path
+        alreadyDownloaded <- doesFileExist path
+        if not alreadyDownloaded
+          then downloadBroadcast log link path
+          else log $ concat ["already downloaded, skipping ", path]
 
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()

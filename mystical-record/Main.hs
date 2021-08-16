@@ -39,7 +39,7 @@ import Text.XML.HXT.Core
 timestamp :: String -> IO String
 timestamp msg = do
   time <- getZonedTime
-  return $ concat ["[ ", show @String time, " ] ", msg]
+  return $ formatTime defaultTimeLocale "[ %F %X%4Q ] " time ++ msg
 
 -- | Construct logger using provided LogAction
 logger :: String -> LogAction IO String -> IO ()

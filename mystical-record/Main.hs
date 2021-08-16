@@ -17,9 +17,10 @@ module Main where
 
 import Colog.Core (LogAction (..), withLogStringFile, (&>))
 import Colog.Core.IO (logStringStdout)
+import Control.Exception
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Time.LocalTime (getZonedTime)
-import Database.Selda (Attr (..))
+import Database.Selda (Attr (..), SeldaError)
 import qualified Database.Selda as DB
 import qualified Database.Selda.SQLite as DBS
 import Network.HTTP.Client
@@ -141,9 +142,16 @@ broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 insertBroadcastLinks :: Logger -> FilePath -> [BroadcastLink] -> IO ()
 insertBroadcastLinks log path input = do
   log $ concat ["adding broadcast links to database: ", path]
-  DBS.withSQLite path $ do
-    DB.tryCreateTable broadcasts
-    DB.insert_ broadcasts input
+  result <- try @SeldaError $
+    DBS.withSQLite path $ do
+      DB.tryCreateTable broadcasts
+      DB.insert_ broadcasts input
+  case result of
+    Left error -> do
+      log $ concat ["failed to add broadcast links: ", show error]
+      log "fatal error, exiting"
+      exitFailure
+    otherwise -> return ()
 
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()

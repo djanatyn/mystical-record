@@ -8,7 +8,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -105,10 +104,10 @@ type ApiHTML = String
 
 -- | Download a BroadcastLink
 downloadBroadcast :: Logger -> BroadcastLink -> FilePath -> IO ()
-downloadBroadcast log (link@BroadcastLink {url, dj}) path = do
+downloadBroadcast log link@BroadcastLink {url, dj} path = do
   download <- openURI $ "http://radio.fobby.net/archives/" ++ toString url
   case download of
-    Left error -> log $ concat ["failed to download: ", error]
+    Left error -> log $ "failed to download: " ++ error
     Right body -> writeFileBS path body
 
 -- | Parse out [BroadcastLink] from ArchiveAPI response for a given DJ
@@ -128,7 +127,7 @@ archiveClient = genericClient @ArchiveAPI
 -- | Use archiveClient to fetch broadcast listings for a given DJ
 fetchDJ :: Logger -> DJ -> IO (Maybe [BroadcastLink])
 fetchDJ log dj = do
-  log $ concat ["grabbing listings for ", show dj]
+  log $ "grabbing listings for " ++ show dj
   archives <- runArchive $ listDJ archiveClient (Just dj)
   case archives of
     Left error -> return Nothing
@@ -141,27 +140,26 @@ broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 -- | Insert links to broadcasts into `broadcast` table
 insertBroadcastLinks :: Logger -> FilePath -> [BroadcastLink] -> IO ()
 insertBroadcastLinks log path input = do
-  log $ concat ["adding broadcast links to database: ", path]
+  log $ "adding broadcast links to database: " ++ path
   result <- try @SeldaError $
     DBS.withSQLite path $ do
       DB.tryCreateTable broadcasts
       DB.tryInsert broadcasts input
   case result of
-    Left error -> do
-      log $ concat ["failed to add broadcast links: ", show error]
-    otherwise -> return ()
+    Left error -> log $ "failed to add broadcast links: " ++ show error
+    _ -> return ()
 
 -- | Download each BroadcastLink, skipping if already downloaded
 downloadLinks :: Logger -> [BroadcastLink] -> IO ()
-downloadLinks log links = forM_ links $ \(link@BroadcastLink {url}) -> do
-  log $ concat ["dowloading ", show url]
+downloadLinks log links = forM_ links $ \link@BroadcastLink {url} -> do
+  log $ "dowloading " ++ show url
   let path = "downloads/" ++ toString url
    in do
         createDirectoryIfMissing True $ takeDirectory path
         alreadyDownloaded <- doesFileExist path
         if not alreadyDownloaded
           then downloadBroadcast log link path
-          else log $ concat ["already downloaded, skipping ", path]
+          else log $ "already downloaded, skipping " ++ path
 
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()

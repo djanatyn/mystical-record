@@ -137,17 +137,13 @@ fetchDJ log dj = do
 broadcasts :: DB.Table BroadcastLink
 broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 
--- | Create database + tables
-initDatabase :: Logger -> FilePath -> [BroadcastLink] -> IO ()
-initDatabase log path input = do
-  dbExists <- doesFileExist path
-  if dbExists
-    then log $ concat ["database already exists: ", path]
-    else do
-      log $ concat ["creating database: ", path]
-      DBS.withSQLite path $ do
-        DB.createTable broadcasts
-        DB.insert_ broadcasts input
+-- | Insert links to broadcasts into `broadcast` table
+insertBroadcastLinks :: Logger -> FilePath -> [BroadcastLink] -> IO ()
+insertBroadcastLinks log path input = do
+  log $ concat ["adding broadcast links to database: ", path]
+  DBS.withSQLite path $ do
+    DB.tryCreateTable broadcasts
+    DB.insert_ broadcasts input
 
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()
@@ -155,6 +151,5 @@ main = do
   startTime <- getZonedTime
   let path = formatTime defaultTimeLocale "mystical-record-%F.log" startTime
       log = withLogStringFile path . logger
-   in do
-        archiveBroadcasts <- join . catMaybes <$> traverse (fetchDJ log) knownDJs
-        initDatabase log "broadcasts.db" archiveBroadcasts
+   in traverse (fetchDJ log) knownDJs
+        >>= insertBroadcastLinks log "broadcasts.db" . mconcat . catMaybes

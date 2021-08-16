@@ -31,7 +31,6 @@ import Servant.API.Generic
 import Servant.Client
 import Servant.Client.Core
 import Servant.Client.Generic
-import System.Directory (doesFileExist)
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
 

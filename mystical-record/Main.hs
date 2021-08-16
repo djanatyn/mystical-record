@@ -15,11 +15,9 @@
 
 module Main where
 
-import Colog.Core ((&>))
+import Colog.Core (LogAction (..), withLogStringFile, (&>))
 import Colog.Core.IO (logStringStdout)
-import Control.Monad
-import Data.Coerce
-import Data.Maybe
+import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Time.LocalTime (getZonedTime)
 import Database.Selda (Attr (..))
 import qualified Database.Selda as DB
@@ -32,14 +30,22 @@ import Servant.API.Generic
 import Servant.Client
 import Servant.Client.Core
 import Servant.Client.Generic
+import System.Directory (doesFileExist)
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
 
-log :: String -> IO ()
-log msg = do
+-- | Timestamp each log line
+timestamp :: String -> IO String
+timestamp msg = do
   time <- getZonedTime
-  let record = concat ["[ ", show @String time, " ] ", msg]
-   in record &> logStringStdout
+  return $ concat ["[ ", show @String time, " ] ", msg]
+
+-- | Construct logger using provided LogAction
+logger :: String -> LogAction IO String -> IO ()
+logger msg action =
+  timestamp msg >>= unLogAction (logStringStdout <> action)
+
+type Logger = String -> IO ()
 
 -- | Radio Starmen Archives are enumerated with a PHP script, "archives.php".
 -- | The script takes a query parameter, `dj`, and returns HTML with a listing
@@ -97,7 +103,6 @@ type ApiHTML = String
 -- | Download a BroadcastLink
 downloadBroadcast :: BroadcastLink -> FilePath -> IO ()
 downloadBroadcast (link@BroadcastLink {url, dj}) path = do
-  log $ "downloading " ++ show link
   manager <- newManager defaultManagerSettings
   request <- parseRequest $ "http://radio.fobby.net/archives" ++ toString url
   response <-
@@ -120,8 +125,9 @@ archiveClient :: RunClient m => ArchiveAPI (AsClientT m)
 archiveClient = genericClient @ArchiveAPI
 
 -- | Use archiveClient to fetch broadcast listings for a given DJ
-fetchDJ :: DJ -> IO (Maybe [BroadcastLink])
-fetchDJ dj = do
+fetchDJ :: Logger -> DJ -> IO (Maybe [BroadcastLink])
+fetchDJ log dj = do
+  log $ concat ["grabbing listings for ", show dj]
   archives <- runArchive $ listDJ archiveClient (Just dj)
   case archives of
     Left error -> return Nothing
@@ -132,13 +138,23 @@ broadcasts :: DB.Table BroadcastLink
 broadcasts = DB.table "broadcasts" [#url :- DB.primary]
 
 -- | Create database + tables
-initDatabase :: FilePath -> [BroadcastLink] -> IO ()
-initDatabase path input = DBS.withSQLite path $ do
-  DB.createTable broadcasts
-  DB.insert_ broadcasts input
+initDatabase :: Logger -> FilePath -> [BroadcastLink] -> IO ()
+initDatabase log path input = do
+  dbExists <- doesFileExist path
+  if dbExists
+    then log $ concat ["database already exists: ", path]
+    else do
+      log $ concat ["creating database: ", path]
+      DBS.withSQLite path $ do
+        DB.createTable broadcasts
+        DB.insert_ broadcasts input
 
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()
 main = do
-  archiveBroadcasts <- join . catMaybes <$> traverse fetchDJ knownDJs
-  initDatabase "broadcasts.db" archiveBroadcasts
+  startTime <- getZonedTime
+  let path = formatTime defaultTimeLocale "mystical-record-%F.log" startTime
+      log = withLogStringFile path . logger
+   in do
+        archiveBroadcasts <- join . catMaybes <$> traverse (fetchDJ log) knownDJs
+        initDatabase log "broadcasts.db" archiveBroadcasts

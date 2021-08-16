@@ -29,4 +29,5 @@ executable mystical-record
       selda-sqlite,
       -- logging
       time,
+      directory,
       co-log-core

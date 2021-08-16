@@ -151,6 +151,7 @@ insertBroadcastLinks log path input = do
       log $ concat ["failed to add broadcast links: ", show error]
     otherwise -> return ()
 
+-- | Download each BroadcastLink, skipping if already downloaded
 downloadLinks :: Logger -> [BroadcastLink] -> IO ()
 downloadLinks log links = forM_ links $ \(link@BroadcastLink {url}) -> do
   log $ concat ["dowloading ", show url]

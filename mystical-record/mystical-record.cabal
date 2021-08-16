@@ -24,9 +24,13 @@ executable mystical-record
       -- parsing responses
       hxt,
       hxt-css,
+      -- downloading oggs
+      download,
       -- persistence
       selda,
       selda-sqlite,
       -- logging
       time,
+      filepath,
+      directory,
       co-log-core

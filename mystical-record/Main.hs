@@ -23,6 +23,7 @@ import Data.Time.LocalTime (getZonedTime)
 import Database.Selda (Attr (..), SeldaError)
 import qualified Database.Selda as DB
 import qualified Database.Selda.SQLite as DBS
+import Network.Download (openURI)
 import Network.HTTP.Client
 import Network.HTTP.Media hiding (Accept)
 import Relude
@@ -31,6 +32,8 @@ import Servant.API.Generic
 import Servant.Client
 import Servant.Client.Core
 import Servant.Client.Generic
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath (takeDirectory)
 import Text.XML.HXT.CSS
 import Text.XML.HXT.Core
 
@@ -101,14 +104,12 @@ instance DB.SqlRow BroadcastLink
 type ApiHTML = String
 
 -- | Download a BroadcastLink
-downloadBroadcast :: BroadcastLink -> FilePath -> IO ()
-downloadBroadcast (link@BroadcastLink {url, dj}) path = do
-  manager <- newManager defaultManagerSettings
-  request <- parseRequest $ "http://radio.fobby.net/archives" ++ toString url
-  response <-
-    withResponse request manager $
-      Network.HTTP.Client.responseBody
-  writeFileBS path response
+downloadBroadcast :: Logger -> BroadcastLink -> FilePath -> IO ()
+downloadBroadcast log (link@BroadcastLink {url, dj}) path = do
+  download <- openURI $ "http://radio.fobby.net/archives/" ++ toString url
+  case download of
+    Left error -> log $ concat ["failed to download: ", error]
+    Right body -> writeFileBS path body
 
 -- | Parse out [BroadcastLink] from ArchiveAPI response for a given DJ
 parseBroadcasts :: DJ -> ApiHTML -> IO [BroadcastLink]
@@ -152,11 +153,21 @@ insertBroadcastLinks log path input = do
       exitFailure
     otherwise -> return ()
 
+downloadLinks :: Logger -> [BroadcastLink] -> IO ()
+downloadLinks log links = forM_ links $ \(link@BroadcastLink {url}) -> do
+  log $ concat ["dowloading ", show url]
+  let path = "downloads/" ++ toString url
+   in do
+        createDirectoryIfMissing True $ takeDirectory path
+        downloadBroadcast log link path
+
 -- | Fetch broadcasts listings for all known artists, add to database
 main :: IO ()
 main = do
   startTime <- getZonedTime
   let path = formatTime defaultTimeLocale "mystical-record-%F.log" startTime
       log = withLogStringFile path . logger
-   in traverse (fetchDJ log) knownDJs
-        >>= insertBroadcastLinks log "broadcasts.db" . mconcat . catMaybes
+   in do
+        broadcastLinks <- mconcat . catMaybes <$> traverse (fetchDJ log) knownDJs
+        insertBroadcastLinks log "broadcasts.db" broadcastLinks
+        downloadLinks log broadcastLinks
